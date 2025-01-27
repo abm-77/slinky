@@ -321,6 +321,14 @@ pub struct ElfSectionHeader {
     pub addralign: u64,   // alignment in bytes
     pub entsize: u64,     // size of each entry in section
 
+                          //pub name: String,
+                          //pub data: Vec<u8>,
+                          //pub relocations: Option<Vec<ElfRelocationA>>,
+}
+
+#[derive(Debug)]
+pub struct ElfSection {
+    pub header: ElfSectionHeader,
     pub name: String,
     pub data: Vec<u8>,
     pub relocations: Option<Vec<ElfRelocationA>>,
@@ -361,7 +369,7 @@ pub struct ElfRelocationA {
 pub struct ElfFile {
     pub header: ElfHeader,
     pub section_data: Vec<u8>,
-    pub section_headers: Vec<ElfSectionHeader>,
+    pub sections: Vec<ElfSection>,
 }
 
 impl ElfSymbol {

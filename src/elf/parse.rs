@@ -1,6 +1,6 @@
 use super::{
-    ElfFile, ElfFileIdentifier, ElfHeader, ElfRelocationA, ElfSectionHeader, ElfSectionType,
-    ElfSegmentHeader, ElfSymbol,
+    ElfFile, ElfFileIdentifier, ElfHeader, ElfRelocationA, ElfSection, ElfSectionHeader,
+    ElfSectionType, ElfSegmentHeader, ElfSymbol,
 };
 
 use nom::bytes::complete::{tag, take};
@@ -99,9 +99,6 @@ impl ElfSectionHeader {
             info,
             addralign,
             entsize,
-            name: String::new(),
-            data: Vec::new(),
-            relocations: None,
         };
 
         Ok((input, hdr))
@@ -219,9 +216,9 @@ impl ElfFile {
         Ok(file)
     }
 
-    pub fn get_symtab(&self) -> Option<&ElfSectionHeader> {
-        for section in self.section_headers.iter() {
-            if matches!(section.ty, ElfSectionType::SYMTAB) {
+    pub fn get_symtab(&self) -> Option<&ElfSection> {
+        for section in self.sections.iter() {
+            if matches!(section.header.ty, ElfSectionType::SYMTAB) {
                 return Some(section);
             }
         }
@@ -231,9 +228,9 @@ impl ElfFile {
     pub fn get_symbols(&self) -> Option<Vec<ElfSymbol>> {
         if let Some(symtab) = self.get_symtab() {
             let get_name = |idx: usize| {
-                let symbol_name_string_table_header = &self.section_headers[symtab.link as usize];
+                let symbol_name_string_table = &self.sections[symtab.header.link as usize];
                 let offset =
-                    (symbol_name_string_table_header.offset - self.header.ehsize as u64) as usize;
+                    (symbol_name_string_table.header.offset - self.header.ehsize as u64) as usize;
                 let name_start = &self.section_data[offset + idx] as *const u8 as *const i8;
                 let name = unsafe { std::ffi::CStr::from_ptr(name_start) };
                 name.to_str().expect("could not create &str").to_string()
@@ -256,7 +253,7 @@ impl ElfFile {
     pub fn parse_helper(input: &[u8]) -> IResult<&[u8], Self> {
         let (input, header) = ElfHeader::parse(input)?;
         let (input, section_data) = take(header.shoff - header.ehsize as u64)(input)?;
-        let (input, mut section_headers) =
+        let (input, section_headers) =
             many1(|i| ElfSectionHeader::parse(i, header.eident.endianness)).parse(input)?;
 
         let section_name_string_table_header = section_headers[header.shstrndx as usize].clone();
@@ -278,21 +275,30 @@ impl ElfFile {
             }
         };
 
-        for sh in section_headers.iter_mut() {
-            sh.name = get_name(sh.name_offset as usize);
-            sh.data = get_data(sh.offset as usize, sh.size as usize);
+        let mut sections = Vec::new();
+        for sh in section_headers {
+            let data = get_data(sh.offset as usize, sh.size as usize);
+            let mut relocations = None;
             if matches!(sh.ty, ElfSectionType::RELA) {
-                sh.relocations = Some(
-                    ElfRelocationA::parse_many(&sh.data[..], header.eident.endianness)
+                relocations = Some(
+                    ElfRelocationA::parse_many(&data[..], header.eident.endianness)
                         .expect("could not get relocations"),
                 );
             }
+
+            let name_offset = sh.name_offset;
+            sections.push(ElfSection {
+                header: sh,
+                name: get_name(name_offset as usize),
+                data,
+                relocations,
+            });
         }
 
         let file = ElfFile {
             header,
             section_data: section_data.to_vec(),
-            section_headers,
+            sections,
         };
 
         Ok((input, file))

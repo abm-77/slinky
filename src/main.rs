@@ -12,9 +12,7 @@ fn main() -> io::Result<()> {
     f.read_to_end(&mut buffer)?;
 
     let elf = ElfFile::parse(buffer.as_bytes()).unwrap();
-    println!("{:#?}", elf.header);
-    println!("{:#?}", elf.section_headers);
+    println!("{:#?}", elf);
     println!("{:#?}", elf.get_symbols());
-
     Ok(())
 }
