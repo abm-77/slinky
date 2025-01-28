@@ -13,6 +13,5 @@ fn main() -> io::Result<()> {
 
     let elf = ElfFile::parse(buffer.as_bytes()).unwrap();
     println!("{:#?}", elf);
-    println!("{:#?}", elf.get_symbols());
     Ok(())
 }

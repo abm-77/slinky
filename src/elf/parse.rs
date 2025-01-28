@@ -203,6 +203,7 @@ impl ElfRelocationA {
                 offset,
                 info,
                 addend: addend as i64,
+                merged: false,
             };
 
             Ok((input, reloca))
@@ -216,54 +217,20 @@ impl ElfFile {
         Ok(file)
     }
 
-    pub fn get_symtab(&self) -> Option<&ElfSection> {
-        for section in self.sections.iter() {
-            if matches!(section.header.ty, ElfSectionType::SYMTAB) {
-                return Some(section);
-            }
-        }
-        return None;
-    }
-
-    pub fn get_symbols(&self) -> Option<Vec<ElfSymbol>> {
-        if let Some(symtab) = self.get_symtab() {
-            let get_name = |idx: usize| {
-                let symbol_name_string_table = &self.sections[symtab.header.link as usize];
-                let offset =
-                    (symbol_name_string_table.header.offset - self.header.ehsize as u64) as usize;
-                let name_start = &self.section_data[offset + idx] as *const u8 as *const i8;
-                let name = unsafe { std::ffi::CStr::from_ptr(name_start) };
-                name.to_str().expect("could not create &str").to_string()
-            };
-
-            let mut symbols =
-                ElfSymbol::parse_many(&symtab.data[..], self.header.eident.endianness)
-                    .expect("could not get symbols");
-
-            for symbol in symbols.iter_mut() {
-                symbol.name = get_name(symbol.name_offset as usize);
-            }
-
-            return Some(symbols);
-        }
-
-        None
-    }
-
     pub fn parse_helper(input: &[u8]) -> IResult<&[u8], Self> {
         let (input, header) = ElfHeader::parse(input)?;
         let (input, section_data) = take(header.shoff - header.ehsize as u64)(input)?;
         let (input, section_headers) =
             many1(|i| ElfSectionHeader::parse(i, header.eident.endianness)).parse(input)?;
 
+        // parse sections
         let section_name_string_table_header = section_headers[header.shstrndx as usize].clone();
-        let get_name = |idx: usize| {
+        let get_section_name = |idx: usize| {
             let offset = (section_name_string_table_header.offset - header.ehsize as u64) as usize;
             let name_start = &section_data[offset + idx] as *const u8 as *const i8;
             let name = unsafe { std::ffi::CStr::from_ptr(name_start) };
             name.to_str().expect("could not create &str").to_string()
         };
-
         let get_data = |offset: usize, size: usize| {
             if offset == 0 && size == 0 {
                 Vec::new()
@@ -279,7 +246,7 @@ impl ElfFile {
         for sh in section_headers {
             let data = get_data(sh.offset as usize, sh.size as usize);
             let mut relocations = None;
-            if matches!(sh.ty, ElfSectionType::RELA) {
+            if sh.ty == ElfSectionType::RELA {
                 relocations = Some(
                     ElfRelocationA::parse_many(&data[..], header.eident.endianness)
                         .expect("could not get relocations"),
@@ -289,16 +256,44 @@ impl ElfFile {
             let name_offset = sh.name_offset;
             sections.push(ElfSection {
                 header: sh,
-                name: get_name(name_offset as usize),
+                name: get_section_name(name_offset as usize),
                 data,
                 relocations,
             });
+        }
+
+        // parse symbols
+        let mut symtab = None;
+        for section in sections.iter() {
+            if section.header.ty == ElfSectionType::SYMTAB {
+                symtab = Some(section.clone());
+            }
+        }
+
+        let mut symbols = Vec::new();
+        if let Some(symtab) = symtab {
+            let get_symbol_name = |idx: usize| {
+                let symbol_name_string_table = &sections[symtab.header.link as usize];
+                let offset =
+                    (symbol_name_string_table.header.offset - header.ehsize as u64) as usize;
+                let name_start = &section_data[offset + idx] as *const u8 as *const i8;
+                let name = unsafe { std::ffi::CStr::from_ptr(name_start) };
+                name.to_str().expect("could not create &str").to_string()
+            };
+
+            symbols = ElfSymbol::parse_many(&symtab.data[..], header.eident.endianness)
+                .expect("could not get symbols");
+
+            for symbol in symbols.iter_mut() {
+                symbol.name = get_symbol_name(symbol.name_offset as usize);
+            }
         }
 
         let file = ElfFile {
             header,
             section_data: section_data.to_vec(),
             sections,
+            symbols,
         };
 
         Ok((input, file))

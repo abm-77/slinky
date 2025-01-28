@@ -10,7 +10,7 @@ pub const ELF_MAGIC: &[u8] = b"\x7FELF";
 pub const EHSIZE_64: usize = 64;
 
 #[repr(u16)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ElfFileType {
     NONE = 0,        // none
     REL = 1,         // relocatable file
@@ -48,7 +48,7 @@ impl From<ElfFileType> for u16 {
 }
 
 #[repr(u16)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ElfMachineType {
     NONE = 0,      // unknown machine
     MIPS = 8,      // mips
@@ -75,7 +75,7 @@ impl From<ElfMachineType> for u16 {
 }
 
 #[repr(u32)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ElfSectionType {
     NULL = 0,               // inactive
     PROGBITS = 1,           // program defined information
@@ -281,7 +281,7 @@ impl From<ElfRelocationType> for u64 {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ElfFileIdentifier {
     pub class: u8,
     pub endianness: nom::number::Endianness,
@@ -290,7 +290,7 @@ pub struct ElfFileIdentifier {
     pub abi_version: u8,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ElfHeader {
     pub eident: ElfFileIdentifier,
     pub ty: ElfFileType,         // file type
@@ -320,13 +320,9 @@ pub struct ElfSectionHeader {
     pub info: u32,        // depends on section type
     pub addralign: u64,   // alignment in bytes
     pub entsize: u64,     // size of each entry in section
-
-                          //pub name: String,
-                          //pub data: Vec<u8>,
-                          //pub relocations: Option<Vec<ElfRelocationA>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ElfSection {
     pub header: ElfSectionHeader,
     pub name: String,
@@ -346,7 +342,7 @@ pub struct ElfSegmentHeader {
     pub align: u64,         // alignment in memory and file
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ElfSymbol {
     pub name_offset: u32, // symbol name (index into symbol string table)
     pub name: String,
@@ -362,14 +358,16 @@ pub struct ElfRelocationA {
     pub offset: u64, // gives the location at which to apply the relocation action
     pub info: u64,   // gives symbol table index to relocate and the type of relocation to apply
     pub addend: i64, // specifies constant addend used to compute the value to be stored in relocatable
-                     // field
+    // field
+    pub merged: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ElfFile {
     pub header: ElfHeader,
-    pub section_data: Vec<u8>,
+    section_data: Vec<u8>,
     pub sections: Vec<ElfSection>,
+    pub symbols: Vec<ElfSymbol>,
 }
 
 impl ElfSymbol {
